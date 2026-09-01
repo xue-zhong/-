@@ -9,8 +9,10 @@ import com.hmdp.mapper.VoucherOrderMapper;
 import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
+import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
 import org.springframework.aop.framework.AopContext;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +35,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private SeckillVoucherServiceImpl seckillVoucherService;
     @Resource
     private RedisIdWorker redisIdWorker;
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
 
     @Override
     public Result seckillVoucher(Long voucherId) {
@@ -58,7 +62,13 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         /*intern()是到字符串池去拿原有的字符串，如果没有再创建新的，如果不使用该方法，会使每次都会
     new一个新的字符串，这样锁就不一致了，就不能起到防护作用*/
         //001.这样做事务不生效，需要解决
-        synchronized (userId.toString().intern()){
+//        synchronized (userId.toString().intern()){
+        SimpleRedisLock lock=new SimpleRedisLock(stringRedisTemplate,"lock"+userId);
+        boolean isLock= lock.tryLock(1200);
+        if(!isLock){
+            return Result.fail("不允许重复下单");
+        }
+        try {
             //002.拿到当前对象的代理对象
             IVoucherOrderService proxy=(IVoucherOrderService) AopContext.currentProxy();
 
@@ -66,7 +76,11 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             //003.使用proxy.createVoucherOrder(voucherId)还需要启动代理对象（在启动类）和引入依赖，（还需要在接口里创建一下）
             return proxy.createVoucherOrder(voucherId);
 //            return createVoucherOrder(voucherId);
+//        }
+        }finally {
+            lock.unlock();
         }
+
     }
     @Transactional
     public Result createVoucherOrder(Long voucherId){
