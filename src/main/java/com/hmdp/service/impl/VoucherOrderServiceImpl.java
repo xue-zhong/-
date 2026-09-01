@@ -63,7 +63,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     new一个新的字符串，这样锁就不一致了，就不能起到防护作用*/
         //001.这样做事务不生效，需要解决
 //        synchronized (userId.toString().intern()){
-        SimpleRedisLock lock=new SimpleRedisLock(stringRedisTemplate,"lock"+userId);
+        SimpleRedisLock lock=new SimpleRedisLock(stringRedisTemplate,"order"+userId);
         boolean isLock= lock.tryLock(1200);
         if(!isLock){
             return Result.fail("不允许重复下单");
