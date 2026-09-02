@@ -14,12 +14,15 @@ import com.hmdp.utils.UserHolder;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.Collections;
 
 /**
  * <p>
@@ -41,7 +44,39 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private StringRedisTemplate stringRedisTemplate;
     @Resource
     private RedissonClient redissonClient;
-    @Override
+
+    private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
+    static {
+        SECKILL_SCRIPT=new DefaultRedisScript<>();
+        SECKILL_SCRIPT.setLocation(new ClassPathResource("seckill.lua"));
+        SECKILL_SCRIPT.setResultType(Long.class);
+    }
+    //异步秒杀
+    //基于redis完成秒杀判断
+    public Result seckillVoucher(Long voucherId) {
+        //准备参数，用户id，优惠劵id（本就传入）
+        Long userId=UserHolder.getUser().getId();
+        //执行lua脚本
+        Long result =stringRedisTemplate.execute(
+                //传入脚本参数
+                SECKILL_SCRIPT,
+                //由于没有key参数，所以传入空集合
+                Collections.emptyList(),
+                //传入其他参数，订单id，用户id
+                voucherId.toString(),userId.toString()
+        );
+        //将其转换为int
+        int r=result.intValue();
+        if(result!=0){
+            return Result.fail(result==1?"库存不足":"不能重复下单");
+        }
+        //使用工具类获取随机订单id
+        long orderId=redisIdWorker.nextId("order");
+        return Result.ok(orderId);
+    }
+
+
+/*    @Override
     public Result seckillVoucher(Long voucherId) {
         //查询优惠劵信息(使用本函数getById只能查看订单，应使用SeckillVoucherServiceImpl的)
         SeckillVoucher seckillVoucher=seckillVoucherService.getById(voucherId);
@@ -62,8 +97,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
         }
         Long userId= UserHolder.getUser().getId();
-        /*intern()是到字符串池去拿原有的字符串，如果没有再创建新的，如果不使用该方法，会使每次都会
-    new一个新的字符串，这样锁就不一致了，就不能起到防护作用*/
+        //intern()是到字符串池去拿原有的字符串，如果没有再创建新的，如果不使用该方法，会使每次都会
+    //new一个新的字符串，这样锁就不一致了，就不能起到防护作用
         //001.这样做事务不生效，需要解决
 //        synchronized (userId.toString().intern()){
 //        SimpleRedisLock lock=new SimpleRedisLock(stringRedisTemplate,"order"+userId);
@@ -85,7 +120,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             lock.unlock();
         }
 
-    }
+    } */
     @Transactional
     public Result createVoucherOrder(Long voucherId){
         Long userId= UserHolder.getUser().getId();
