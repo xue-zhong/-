@@ -24,7 +24,6 @@ public class RefreshTokenInterceptor implements HandlerInterceptor {
 //        HttpSession session=request.getSession();
         String token= request.getHeader("authorization");
         if(StrUtil.isBlank(token)){
-
             return true;
         }
 //        UserDTO user = (UserDTO) session.getAttribute("user");
